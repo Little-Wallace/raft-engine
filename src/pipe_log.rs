@@ -670,7 +670,7 @@ fn write_file_header(fd: RawFd) -> Result<usize> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use crossbeam::channel::Receiver;
     use raft::eraftpb::Entry;
@@ -891,4 +891,38 @@ mod tests {
             unreachable!();
         }
     }
+    #[test]
+    fn test_pwrite() {
+        let dir = Builder::new().prefix("test_pwrite").tempdir().unwrap();
+        let path = dir.path().join("file");
+        let path_str = path.to_str().unwrap();
+        let fd = open_active_file(path_str).unwrap();
+        let write_size = 50 * 1024 * 1024;
+        const per_write: usize= 8 * 1024;
+        let buf = vec![1;per_write];
+        let mut offset = 0;
+        let mut capacity = 0;
+        let now = Instant::now();
+        while offset < write_size {
+            #[cfg(target_os = "linux")]
+            if offset >= capacity {
+                // Use fallocate to pre-allocate disk space for active file.
+                let reserve = offset - capacity;
+                let alloc_size = cmp::max(reserve, FILE_ALLOCATE_SIZE);
+                fcntl::fallocate(
+                    fd,
+                    fcntl::FallocateFlags::FALLOC_FL_KEEP_SIZE,
+                    capacity,
+                    alloc_size as _,
+                ).map_err(|e| parse_nix_error(e, "fallocate"))?;
+                capacity += alloc_size;
+            }
+            pwrite_exact(fd, offset, &buf).unwrap();
+            offset += buf.len() as u64;
+        }
+        println!("cost pwrite: {:?}", now.elapsed());
+        fsync(fd).unwrap();
+        println!("cost fsync: {:?}", now.elapsed());
+    }
+
 }
