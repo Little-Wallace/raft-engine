@@ -897,7 +897,7 @@ mod tests {
         let path = dir.path().join("file");
         let path_str = path.to_str().unwrap();
         let fd = open_active_file(path_str).unwrap();
-        let write_size = 50 * 1024 * 1024;
+        let write_size = 4 * 1024 * 1024 * 1024;
         const per_write: usize= 8 * 1024;
         let buf = vec![1;per_write];
         let mut offset = 0;
@@ -908,13 +908,13 @@ mod tests {
             if offset >= capacity {
                 // Use fallocate to pre-allocate disk space for active file.
                 let reserve = offset - capacity;
-                let alloc_size = cmp::max(reserve, FILE_ALLOCATE_SIZE);
+                let alloc_size = cmp::max(reserve, FILE_ALLOCATE_SIZE as u64);
                 fcntl::fallocate(
                     fd,
                     fcntl::FallocateFlags::FALLOC_FL_KEEP_SIZE,
-                    capacity,
+                    capacity as i64,
                     alloc_size as _,
-                ).map_err(|e| parse_nix_error(e, "fallocate"))?;
+                ).map_err(|e| parse_nix_error(e, "fallocate")).unwrap();
                 capacity += alloc_size;
             }
             pwrite_exact(fd, offset, &buf).unwrap();
